@@ -1,0 +1,116 @@
+---
+title: "p8105_hw6_cm3928"
+author: "Clement Mugenzi"
+date: "11/20/2019"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(viridis)
+library(skimr)
+library(purrr)
+library(tidyr)
+library(rvest)
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+theme_set(theme_minimal() + theme(legend.position = "right"))
+```
+
+# Problem 1
+
+```{r}
+weight_df = 
+  read_csv("Data/birthweight.csv") %>% 
+  janitor::clean_names() %>%
+  rename(gender = babysex, momwt = delwt, momrace = mrace, dadrace = frace) %>% 
+  mutate(
+    gender = recode(gender, "1" = "Male", "2" = "Female"),
+    dadrace = recode(dadrace, "1" = "White", "2" = "Black", "3" = "Asian",
+                     "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
+    momrace = recode(momrace, "1" = "White", "2" = "Black", "3" = "Asian",
+                     "4" = "Puerto Rican", "8" = "Other"),
+    malform = recode(malform, "0" = "Absent", "1" = "Present")) %>% view()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
