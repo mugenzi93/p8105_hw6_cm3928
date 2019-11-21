@@ -158,12 +158,88 @@ Therefore, I will choose `Model_1` that predicts the baby's birth weight using g
 
 # Problem 2
 
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything()) %>% view()
+```
 
 
+Let's a write a function that will help us generate the bootstrap samples. This function will have the weather dataframe as its argument and should be able to draw a sample from the dataframe with replacement.
 
+```{r}
+boot_samples = function(df) {
+  sample_frac(weather_df, replace = TRUE)
+}
+```
 
+It looks like the function is doing what it is supposed to be doing according to the plot below.
 
+```{r}
+boot_samples(weather_df) %>% 
+  ggplot(aes(x = tmin, y = tmax)) + 
+  geom_point(alpha = .5) +
+  stat_smooth(method = "lm") +
+  labs(
+    title = "Repeated Sampling",
+    x = "Tmin",
+    y = "Tmax")
+```
 
+**Let's now draw 5000 bootstrap samples:**
+
+```{r}
+boot_straps = 
+  data_frame(
+    strap_number = 1:5000,
+    strap_sample = rerun(5000, boot_samples(sim_df_nonconst))
+  )
+boot_straps
+```
+
+Let's now produce estimates for each bootstrap sample, compute their `log` result, then plot their distribution:
+
+```{r}
+log_beta = 
+  boot_straps %>% 
+  mutate(
+    model = map(strap_sample, ~lm(tmax ~ tmin, data = .x)),
+    results = map(model, broom::tidy)) %>% 
+  select(-strap_sample, -model) %>% 
+  unnest() %>% 
+  select(strap_number, term, estimate) %>%
+  pivot_wider(
+    names_from = "term",
+    values_from = "estimate") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    log_estimate = log(intercept * tmin))
+head(log_beta)
+```
+
+**Density Plot:**
+
+```{r}
+log_beta %>% 
+  ggplot(aes(x = log_estimate)) +
+  geom_density() +
+  labs(
+    title = "Distribution of Log intercept and Slope",
+    x = "Log Estimates",
+    y = "Density")
+```
+
+The `log(beta_0*beta_1)` looks normally distributed with a dent at the maximum point (turning point).
+
+**95% Confidence Interval:**
 
 
 

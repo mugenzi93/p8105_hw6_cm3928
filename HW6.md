@@ -232,3 +232,133 @@ length at birth, baby’s sex, and finally the mother’s race as its
 predictor variables.
 
 # Problem 2
+
+``` r
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything()) %>% view()
+```
+
+    ## Registered S3 method overwritten by 'crul':
+    ##   method                 from
+    ##   as.character.form_file httr
+
+    ## Registered S3 method overwritten by 'hoardr':
+    ##   method           from
+    ##   print.cache_info httr
+
+    ## file path:          /Users/clementmugenzi/Library/Caches/rnoaa/ghcnd/USW00094728.dly
+
+    ## file last updated:  2019-09-03 20:39:20
+
+    ## file min/max dates: 1869-01-01 / 2019-09-30
+
+Let’s a write a function that will help us generate the bootstrap
+samples. This function will have the weather dataframe as its argument
+and should be able to draw a sample from the dataframe with replacement.
+
+``` r
+boot_samples = function(df) {
+  sample_frac(weather_df, replace = TRUE)
+}
+```
+
+It looks like the function is doing what it is supposed to be doing
+according to the plot below.
+
+``` r
+boot_samples(weather_df) %>% 
+  ggplot(aes(x = tmin, y = tmax)) + 
+  geom_point(alpha = .5) +
+  stat_smooth(method = "lm") +
+  labs(
+    title = "Repeated Sampling",
+    x = "Tmin",
+    y = "Tmax")
+```
+
+<img src="HW6_files/figure-gfm/unnamed-chunk-12-1.png" width="90%" />
+
+**Let’s now draw 5000 bootstrap samples:**
+
+``` r
+boot_straps = 
+  data_frame(
+    strap_number = 1:5000,
+    strap_sample = rerun(5000, boot_samples(sim_df_nonconst))
+  )
+boot_straps
+```
+
+    ## # A tibble: 5,000 x 2
+    ##    strap_number strap_sample      
+    ##           <int> <list>            
+    ##  1            1 <tibble [365 × 6]>
+    ##  2            2 <tibble [365 × 6]>
+    ##  3            3 <tibble [365 × 6]>
+    ##  4            4 <tibble [365 × 6]>
+    ##  5            5 <tibble [365 × 6]>
+    ##  6            6 <tibble [365 × 6]>
+    ##  7            7 <tibble [365 × 6]>
+    ##  8            8 <tibble [365 × 6]>
+    ##  9            9 <tibble [365 × 6]>
+    ## 10           10 <tibble [365 × 6]>
+    ## # … with 4,990 more rows
+
+Let’s now produce estimates for each bootstrap sample, compute their
+`log` result, then plot their distribution:
+
+``` r
+log_beta = 
+  boot_straps %>% 
+  mutate(
+    model = map(strap_sample, ~lm(tmax ~ tmin, data = .x)),
+    results = map(model, broom::tidy)) %>% 
+  select(-strap_sample, -model) %>% 
+  unnest() %>% 
+  select(strap_number, term, estimate) %>%
+  pivot_wider(
+    names_from = "term",
+    values_from = "estimate") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    log_estimate = log(intercept * tmin))
+head(log_beta)
+```
+
+    ## # A tibble: 6 x 4
+    ##   strap_number intercept  tmin log_estimate
+    ##          <int>     <dbl> <dbl>        <dbl>
+    ## 1            1      7.02  1.06         2.00
+    ## 2            2      7.41  1.02         2.02
+    ## 3            3      7.63  1.01         2.04
+    ## 4            4      6.87  1.06         1.99
+    ## 5            5      7.36  1.04         2.04
+    ## 6            6      7.03  1.06         2.00
+
+**Density Plot:**
+
+``` r
+log_beta %>% 
+  ggplot(aes(x = log_estimate)) +
+  geom_density() +
+  labs(
+    title = "Distribution of Log intercept and Slope",
+    x = "Log Estimates",
+    y = "Density")
+```
+
+<img src="HW6_files/figure-gfm/unnamed-chunk-15-1.png" width="90%" />
+
+The `log(beta_0*beta_1)` looks normally distributed with a dent at the
+maximum point (turning point).
+
+**95% Confidence Interval:**
