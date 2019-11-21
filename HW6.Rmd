@@ -7,11 +7,10 @@ output: github_document
 
 ```{r setup, include=FALSE}
 library(tidyverse)
-library(viridis)
-library(skimr)
-library(purrr)
-library(tidyr)
 library(rvest)
+library(p8105.datasets)
+library(modelr)
+library(mgcv)
 knitr::opts_chunk$set(
 	echo = TRUE,
 	warning = FALSE,
@@ -25,7 +24,7 @@ options(
 )
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
-theme_set(theme_minimal() + theme(legend.position = "right"))
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
 
 # Problem 1
@@ -34,24 +33,130 @@ theme_set(theme_minimal() + theme(legend.position = "right"))
 weight_df = 
   read_csv("Data/birthweight.csv") %>% 
   janitor::clean_names() %>%
-  rename(gender = babysex, momwt = delwt, momrace = mrace, dadrace = frace) %>% 
+  rename(gender = babysex, momwt = delwt, momrace = mrace, dadrace = frace,
+         avg_smokes = smoken) %>% 
   mutate(
     gender = recode(gender, "1" = "Male", "2" = "Female"),
     dadrace = recode(dadrace, "1" = "White", "2" = "Black", "3" = "Asian",
                      "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
     momrace = recode(momrace, "1" = "White", "2" = "Black", "3" = "Asian",
                      "4" = "Puerto Rican", "8" = "Other"),
-    malform = recode(malform, "0" = "Absent", "1" = "Present")) %>% view()
+    malform = recode(malform, "0" = "Absent", "1" = "Present"),
+    gender = factor(gender, levels = c("Male", "Female")),
+    dadrace = factor(dadrace, levels = c("White", "Black", "Asian",
+                                         "Puerto Rican", "Other",
+                                         "unknown")),
+    momrace = factor(momrace, levels = c("White", "Black", "Asian",
+                                         "Puerto Rican", "Other")),
+    malform = factor(malform, levels = c("Absent", "Present"))) %>% 
+  arrange(gender) %>% view()
+```
+
+**Model-building Process:** 
+
+Before deciding what predictors to include in my model, I first fitted the model with all independent variables to determine which ones had a significant p-value, meaning independnt variables directly affecting the baby's birthweight. Then I fitted the model using the selected predictors.
+
+
+```{r}
+bwt_lm = lm(bwt ~ gaweeks + avg_smokes + bhead + blength +
+              gender + momrace, data = weight_df)
+summary(bwt_lm)
 ```
 
 
+## Plot of Residuals against Fitted values
+
+**Adding Residuals and Fitted values to the dataframe using modelr:**
 
 
+```{r}
+weight_df1 = add_predictions(weight_df, bwt_lm)
+weight_df2 = add_residuals(weight_df, bwt_lm)
+weight_df = left_join(weight_df1, weight_df2)
+```
+
+```{r}
+weight_df %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point() + 
+  geom_smooth(color = "red", se = FALSE) +
+  geom_hline(yintercept = 0) +
+  labs(
+    title = "Residuals against Fitted Values",
+    x = "Fitted Values",
+    y = "Residuals")
+```
+
+**Building two other models:**
+
+1. First Model:
+
+One using length at birth and gestational age as predictors (main effects only)
+
+```{r}
+bwt_lm1 = lm(bwt ~ gaweeks + blength, data = weight_df)
+summary(bwt_lm1)
+```
+
+2. Second Model:
+
+a model that uses head circumference, length, sex, and all interactions (including the three-way interaction) to test for any interaction that might be present.
+
+```{r}
+bwt_lm2 = lm(bwt ~ bhead * blength + blength * gender + gender * bhead +
+                bhead * blength * gender, data = weight_df)
+summary(bwt_lm2)
+```
 
 
+**Comparison:**
 
+I will use the `crossv_mc` function from `modelr` to split `weight_df` into a train (80%) and test (20%) dataframes.
 
+```{r}
+cv_df =
+  crossv_mc(weight_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))
+```
 
+I will then `map` the three built models above on the train dataframe, then also use `map2_dbl` to map the models to the `test` dataframe in an effort to generate the 
+`Root mean squared errors` to help me make the decision of which of the three models is superior, meaning which model produces minimum `RMSE`.
+
+```{r}
+cv_df = 
+  cv_df %>% 
+  mutate(bwt_lm = map(train, ~bwt_lm),
+         bwt_lm1 = map(train, ~bwt_lm1),
+         bwt_lm2 = map(train, ~bwt_lm2)) %>% 
+  mutate(rmse_Model_1 = map2_dbl(bwt_lm, test, ~rmse(model = .x, data = .y)),
+         rmse_Model_2 = map2_dbl(bwt_lm1, test, ~rmse(model = .x, data = .y)),
+         rmse_Model_3 = map2_dbl(bwt_lm2, test, ~rmse(model = .x, data = .y)))
+```
+
+Using a visualization method, I can now choose which model is superior.
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin() +
+  labs(
+    title = "RMSE for each Model",
+    x = "Models",
+    y = "RMSE")
+```
+
+Therefore, I will choose `Model_1` that predicts the baby's birth weight using gestational age in weeks, the average number of cigarettes smoked per day during pregnancy, baby’s head circumference at birth, baby’s length at birth, baby's sex, and finally the mother's race as its predictor variables.
+
+# Problem 2
 
 
 
