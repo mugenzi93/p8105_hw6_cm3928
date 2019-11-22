@@ -244,7 +244,7 @@ weather_df =
     name = recode(id, USW00094728 = "CentralPark_NY"),
     tmin = tmin / 10,
     tmax = tmax / 10) %>%
-  select(name, id, everything()) %>% view()
+  select(name, id, everything())
 ```
 
     ## Registered S3 method overwritten by 'crul':
@@ -314,51 +314,80 @@ boot_straps
     ## # … with 4,990 more rows
 
 Let’s now produce estimates for each bootstrap sample, compute their
-`log` result, then plot their distribution:
+`log` result, and build the dataframe for r-squared estimates, then plot
+their distribution:
 
 ``` r
 log_beta = 
   boot_straps %>% 
   mutate(
     model = map(strap_sample, ~lm(tmax ~ tmin, data = .x)),
-    results = map(model, broom::tidy)) %>% 
+    coef_results = map(model, broom::tidy),
+    rsquared_results = map(model, broom::glance)) %>% 
   select(-strap_sample, -model) %>% 
-  unnest() %>% 
-  select(strap_number, term, estimate) %>%
+  unnest() %>%
+  select(strap_number, term, estimate, r.squared, adj.r.squared)
+
+# dataframe for coefficients
+log_coeff = 
+  log_beta %>% 
   pivot_wider(
     names_from = "term",
     values_from = "estimate") %>% 
   janitor::clean_names() %>% 
   mutate(
     log_estimate = log(intercept * tmin))
-head(log_beta)
+
+# dataframe for r-squared
+rsquared_df = 
+  log_beta %>% 
+  select(strap_number, r.squared, adj.r.squared) %>% 
+  distinct()
 ```
 
-    ## # A tibble: 6 x 4
-    ##   strap_number intercept  tmin log_estimate
-    ##          <int>     <dbl> <dbl>        <dbl>
-    ## 1            1      7.02  1.06         2.00
-    ## 2            2      7.41  1.02         2.02
-    ## 3            3      7.63  1.01         2.04
-    ## 4            4      6.87  1.06         1.99
-    ## 5            5      7.36  1.04         2.04
-    ## 6            6      7.03  1.06         2.00
-
-**Density Plot:**
+**Density Plot for both r-squared and coefficient estimates:**
 
 ``` r
-log_beta %>% 
+log_plot = 
+  log_coeff %>% 
   ggplot(aes(x = log_estimate)) +
-  geom_density() +
+  geom_density(color = "green") +
   labs(
     title = "Distribution of Log intercept and Slope",
     x = "Log Estimates",
     y = "Density")
+
+rsquared_plot = 
+  rsquared_df %>% 
+  ggplot(aes(x = r.squared)) +
+  geom_density(color = "red") +
+  labs(
+    title = "Distribution of the goodness of fit",
+    x = "R-squared",
+    y = "Density")
+
+gridExtra::grid.arrange(log_plot, rsquared_plot, ncol = 2)
 ```
 
 <img src="HW6_files/figure-gfm/unnamed-chunk-15-1.png" width="90%" />
 
-The `log(beta_0*beta_1)` looks normally distributed with a dent at the
-maximum point (turning point).
+The `log(beta_0*beta_1)` looks normally distributed and so does the
+r-squared (goodness of fit) plot.
 
-**95% Confidence Interval:**
+**95% Confidence Interval for the log coefficient:**
+
+``` r
+quantile(pull(log_coeff, log_estimate), c(0.025, 0.975))
+```
+
+    ##     2.5%    97.5% 
+    ## 1.965485 2.057692
+
+**95% Confidence Interval for R-squared:**
+
+``` r
+quantile(pull(rsquared_df, r.squared), c(0.025, 0.975))
+```
+
+    ##      2.5%     97.5% 
+    ## 0.8936271 0.9269555
